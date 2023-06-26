@@ -26,6 +26,7 @@
 #define IMU_CAP_MAGNETOMETER 4
 #define IMU_CAP_FIFO 8
 #define IMU_CAP_TEMPERATURE 16
+#define IMU_CAP_PEDOMETER 32
 
 typedef struct _tagsample
 {
@@ -45,13 +46,15 @@ enum {
    IMU_TYPE_LSM6DS3,
    IMU_TYPE_BMI160,
    IMU_TYPE_LIS3DH,
+   IMU_TYPE_LIS3DSH,
    IMU_TYPE_MPU6886,
    TYPE_COUNT
 };
 
 #define MODE_ACCEL 1
 #define MODE_GYRO  2
-
+#define MODE_TEMP  4
+#define MODE_FIFO  8
 #define IMU_SUCCESS 0
 #define IMU_ERROR -1
 
@@ -62,6 +65,7 @@ enum {
 #define IMU_MPU6886_ADDR 0x68
 #define IMU_LSM6DS3_ADDR 0x6a
 #define IMU_LIS3DH_ADDR 0x18
+#define IMU_LIS3DSH_ADDR 0x1c
 
 class BBIMU
 {
@@ -74,6 +78,7 @@ public:
     int stop(void);
     uint32_t caps(void);
     int type(void);
+    BBI2C *getBB(void);
     int getSample(IMU_SAMPLE *pSample);
  
 private:
@@ -81,7 +86,7 @@ private:
     int _iAddr;
     int _iType;
     int _iMode;
-    int _iAccStart, _iGyroStart; // starting registers
+    int _iAccStart, _iGyroStart, _iTempStart; // starting registers
     bool _bBigEndian;
     uint32_t _u32Caps;
     int16_t get16Bits(uint8_t *s);

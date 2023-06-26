@@ -14,113 +14,169 @@
 // limitations under the License.
 //===========================================================================
 #include "bb_imu.h"
+
+BBI2C * BBIMU::getBB(void)
+{
+   return &_bbi2c;
+} /* getBB() */
 //
-// Initialize the library
-// It only needs to initialize the I2C interface; the chip is ready
+// Initialize the I2C interface and detect the chip type
 //
 int BBIMU::init(int iSDA, int iSCL, bool bBitBang, uint32_t u32Speed)
 {
 uint8_t ucTemp[4];
+int iOffset;
 
     _bbi2c.iSDA = iSDA;
     _bbi2c.iSCL = iSCL;
     _bbi2c.bWire = !bBitBang;
     I2CInit(&_bbi2c, u32Speed);
 
+    for (iOffset = 0; iOffset<2; iOffset++) { // try both addresses of each device
     // probe the I2C bus for devices
-    if (I2CTest(IMU_LSM9DS1_ADDR)) {
+    if (I2CTest(&_bbi2c, IMU_LSM9DS1_ADDR+iOffset)) {
        // try to read the "WHO_AM_I" register
        ucTemp[0] = 0;
-       I2CReadRegister(&_bbi2c, IMU_LSM9DS1_ADDR, 0x0f, ucTemp, 1);
+       I2CReadRegister(&_bbi2c, IMU_LSM9DS1_ADDR + iOffset, 0x0f, ucTemp, 1);
        if (ucTemp[0] == 0x68) {
            _iType = IMU_TYPE_LSM9DS1;
-           _iAddr = IMU_LSM9DS1_ADDR;
+           _iAddr = IMU_LSM9DS1_ADDR + iOffset;
            _bBigEndian = false;
            _iAccStart = 0x18;
            _iGyroStart = 0x28;
+           _iTempStart = 0x15;
+           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_MAGNETOMETER | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
            return IMU_SUCCESS;
        }
     }
-    if (I2CTest(IMU_LSM6DS3_ADDR)) {
+    if (I2CTest(&_bbi2c, IMU_LSM6DS3_ADDR + iOffset)) {
        // try to read the "WHO_AM_I" register
        ucTemp[0] = 0;
-       I2CReadRegister(&_bbi2c, IMU_LSM6DS3_ADDR, 0x0f, ucTemp, 1);
+       I2CReadRegister(&_bbi2c, IMU_LSM6DS3_ADDR + iOffset, 0x0f, ucTemp, 1);
        if (ucTemp[0] == 0x69) {
            _iType = IMU_TYPE_LSM6DS3;
-           _iAddr = IMU_LSM6DS3_ADDR;
+           _iAddr = IMU_LSM6DS3_ADDR + iOffset;
            _bBigEndian = false;
+           _iAccStart = 0x28;
+           _iGyroStart = 0x22;
+           _iTempStart = 0x20;
+           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
            return IMU_SUCCESS;
        }
     }
-    if (I2CTest(IMU_LIS3DH_ADDR)) {
+    
+    if (I2CTest(&_bbi2c, IMU_LIS3DH_ADDR+iOffset)) {
        // try to read the "WHO_AM_I" register
        ucTemp[0] = 0;
-       I2CReadRegister(&_bbi2c, IMU_LIS3DH_ADDR, 0x0f, ucTemp, 1);
+       I2CReadRegister(&_bbi2c, IMU_LIS3DH_ADDR+iOffset, 0x0f, ucTemp, 1);
        if (ucTemp[0] == 0x33) {
            _iType = IMU_TYPE_LIS3DH;
-           _iAddr = IMU_LIS3DH_ADDR;
+           _iAddr = IMU_LIS3DH_ADDR+iOffset;
+           _iTempStart = 0xc;
+           _iAccStart = 0x28;
            _bBigEndian = false;
+           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
            return IMU_SUCCESS;
        }
     }
-    if (I2CTest(IMU_ADXL345_ADDR)) {
+    if (I2CTest(&_bbi2c, IMU_LIS3DSH_ADDR+iOffset)) {
+       // try to read the "WHO_AM_I" register
        ucTemp[0] = 0;
-       I2CReadRegister(&_bbi2c, IMU_ADXL345_ADDR, 0x0, ucTemp, 1); // get ID
-       if (ucTemp[0] == 0xe5) {
-          _iType = IMU_TYPE_ADXL345;
-          _iAddr = IMU_ADXL345_ADDR;
-          _bBigEndian = false;
-          _iAccStart = 0x32;
-          return IMU_SUCCESS;
+       I2CReadRegister(&_bbi2c, IMU_LIS3DSH_ADDR+iOffset, 0x0f, ucTemp, 1);
+       if (ucTemp[0] == 0x3F) {
+           _iType = IMU_TYPE_LIS3DSH;
+           _iAddr = IMU_LIS3DSH_ADDR+iOffset;
+           _iTempStart = 0xc;
+           _iAccStart = 0x28;
+           _bBigEndian = false;
+           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
+           return IMU_SUCCESS;
        }
     }
-    if (I2CTest(IMU_BMI160_ADDR) || I2CTest(IMU_BMI160_ADDR+1)) {
+    if (I2CTest(&_bbi2c, IMU_ADXL345_ADDR+iOffset)) {
        ucTemp[0] = 0;
-       I2CReadRegister(&_bbi2c, IMU_BMI160_ADDR, 0x0, ucTemp, 1); // get ID
+       I2CReadRegister(&_bbi2c, IMU_ADXL345_ADDR+iOffset, 0x0, ucTemp, 1); // get ID
+       if (ucTemp[0] == 0xe5) {
+           _iType = IMU_TYPE_ADXL345;
+           _iAddr = IMU_ADXL345_ADDR+iOffset;
+           _bBigEndian = false;
+           _iAccStart = 0x32;
+           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_FIFO;
+           return IMU_SUCCESS;
+       }
+    }
+    if (I2CTest(&_bbi2c, IMU_BMI160_ADDR+iOffset)) {
+       ucTemp[0] = 0;
+       I2CReadRegister(&_bbi2c, IMU_BMI160_ADDR+iOffset, 0x0, ucTemp, 1); // get ID
        if (ucTemp[0] == 0xd1) {
-          if (I2CTest(IMU_BMI160_ADDR)
-             _iAddr = IMU_BMI160_ADDR;
-          else
-             _iAddr = IMU_BMI160_ADDR+1;
+          _iAddr = IMU_BMI160_ADDR+iOffset;
           _iType = IMU_TYPE_BMI160;
           _bBigEndian = false;
-          _iAccStart = 0xc;
-          _iGyroStart = 0x12;
+          _iAccStart = 0x12;
+          _iGyroStart = 0xc;
+          _iTempStart = 0x20;
+          _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
           return IMU_SUCCESS;
        }
     }
-    if (I2CTest(IMU_MPU6050_ADDR)) {
+    if (I2CTest(&_bbi2c, IMU_MPU6050_ADDR+iOffset)) {
        ucTemp[0] = 0;
-       I2CReadRegister(&_bbi2c, IMU_MPU6050_ADDR, 0x75, ucTemp, 1); // get ID
+       I2CReadRegister(&_bbi2c, IMU_MPU6050_ADDR+iOffset, 0x75, ucTemp, 1); // get ID
        if (ucTemp[0] == 0x68) {
           _iType = IMU_TYPE_MPU6050;
-          _iAddr = IMU_MPU6050_ADDR;
+          _iAddr = IMU_MPU6050_ADDR+iOffset;
           _bBigEndian = true;
           _iAccStart = 0x43;
           _iGyroStart = 0x3b;
           return IMU_SUCCESS;
        }
     }
-    if (I2CTest(IMU_MPU6886_ADDR)) {
+    if (I2CTest(&_bbi2c, IMU_MPU6886_ADDR+iOffset)) {
        ucTemp[0] = 0;
-       I2CReadRegister(&_bbi2c, IMU_MPU6886_ADDR, 0x75, ucTemp, 1); // get ID
+       I2CReadRegister(&_bbi2c, IMU_MPU6886_ADDR+iOffset, 0x75, ucTemp, 1); // get ID
        if (ucTemp[0] == 0x19) {
           _iType = IMU_TYPE_MPU6886;
-          _iAddr = IMU_MPU6886_ADDR;
+          _iAddr = IMU_MPU6886_ADDR+iOffset;
           _bBigEndian = true;
           _iAccStart = 0x3b;
-          _iGyroStart = 0x43
+          _iGyroStart = 0x43;
           return IMU_SUCCESS;
        }
     }
+    } // for each address offset
     return IMU_ERROR;
 } /* init() */
+//
+// Start the accelerometer, gyroscope or both
+// with the given sample rate
+//
 int BBIMU::start(int iSampleRate, int iMode)
 {
 uint8_t ucTemp[4];
 
    _iMode = iMode;
    switch (_iType) {
+      case IMU_TYPE_LSM6DS3:
+         // If accelerometer enabled
+         if (_iMode & MODE_ACCEL) {
+            ucTemp[0] = 0x10; // CTRL1_XL
+            ucTemp[1] = (5<<4); // 208hz iODR << 4;
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         } // accelerometer enabled
+         // if gyroscope enabled
+         if (_iMode & MODE_GYRO) {
+            ucTemp[0] = 0x11; // CTRL2_G
+            //if (iODR > 8) iODR = 8; // Gyro max rate = 1660hz
+            ucTemp[1] = (5<<4); //208Hz iODR << 4; // gyroscope data rate
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         } // gyroscope enable
+         ucTemp[0] = 0x16; // CTR7_G - power mode
+         //if (_u32Rate <= 52)
+         //ucTemp[1] = 0x80; // Enable low power mode
+         // else
+         ucTemp[1] = 0x40; // Disable low power mode, enable high pass filter
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         break;
       case IMU_TYPE_MPU6050:
 // pwr mgmt 1 register
 // bits: 7=reset, 6=sleep, 5=cycle, 4=n/a, 3=temp_disable, 2-0=clock select
@@ -196,9 +252,28 @@ uint8_t ucTemp[4];
          ucTemp[1] = 0x15; // set gyroscope to normal power mode
          I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          break; // BMI160
+      case IMU_TYPE_LIS3DH:
+      case IMU_TYPE_LIS3DSH:
+         if (_iMode & MODE_ACCEL) {
+            ucTemp[0] = 0x20; // CTRL_REG1
+            ucTemp[1] = (6 << 4); // 100Hz iODR << 4;
+            // Enable only the requested channels
+            ucTemp[1] |= (1 | 2 | 4); // activate all channels
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         } // accelerometer enabled
+         ucTemp[0] = 0x23; // CTRL_REG4
+         ucTemp[1] = 0x88; // BDU & high res mode enabled
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         break; // LIS3DH / LIS3DSH
+      default:
+         return IMU_ERROR;
    } // switch
+   return IMU_SUCCESS;
 } /* start() */
-
+//
+// Read a 16-bit signed integer value from 2 bytes stored at the given pointer addr
+// The member variable _bBigEndian determines the byte order
+//
 int16_t BBIMU::get16Bits(uint8_t *s)
 {
 int16_t i;
@@ -211,7 +286,9 @@ int16_t i;
    }
    return i;
 } /* get16Bits() */
-
+//
+// Read an accel, gyro, and temp sample depending on the operating mode
+//
 int BBIMU::getSample(IMU_SAMPLE *pSample)
 {
 uint8_t ucTemp[16];
@@ -229,17 +306,24 @@ int i;
            pSample->gyro[i] = get16Bits(&ucTemp[i*2]);
         }
      }
+     return IMU_SUCCESS;
 } /* getSample() */
-
+//
+// Stop all activity on the IMU
+//
 int BBIMU::stop(void)
 {
 } /* stop() */
-
+//
+// Return the capability bits of the current device
+//
 uint32_t BBIMU::caps(void)
 {
   return _u32Caps;
 } /* caps() */
-
+//
+// Return the enumerated type of the current device
+//
 int BBIMU::type(void)
 {
   return _iType;
