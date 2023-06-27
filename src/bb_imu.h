@@ -33,6 +33,7 @@ typedef struct _tagsample
    int16_t accel[3];
    int16_t gyro[3];
    int temperature;
+   int steps;
 } IMU_SAMPLE;
 
 //
@@ -55,6 +56,8 @@ enum {
 #define MODE_GYRO  2
 #define MODE_TEMP  4
 #define MODE_FIFO  8
+#define MODE_STEP  16
+
 #define IMU_SUCCESS 0
 #define IMU_ERROR -1
 
@@ -87,6 +90,8 @@ private:
     int _iType;
     int _iMode;
     int _iAccStart, _iGyroStart, _iTempStart; // starting registers
+    int _iStepStart;
+    int _iTempLen; // length of temp info in bytes
     bool _bBigEndian;
     uint32_t _u32Caps;
     int16_t get16Bits(uint8_t *s);

@@ -45,6 +45,7 @@ int iOffset;
            _iAccStart = 0x18;
            _iGyroStart = 0x28;
            _iTempStart = 0x15;
+           _iTempLen = 2;
            _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_MAGNETOMETER | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
            return IMU_SUCCESS;
        }
@@ -60,7 +61,9 @@ int iOffset;
            _iAccStart = 0x28;
            _iGyroStart = 0x22;
            _iTempStart = 0x20;
-           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
+           _iTempLen = 2;
+           _iStepStart = 0x4b;
+           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE | IMU_CAP_PEDOMETER;
            return IMU_SUCCESS;
        }
     }
@@ -73,6 +76,7 @@ int iOffset;
            _iType = IMU_TYPE_LIS3DH;
            _iAddr = IMU_LIS3DH_ADDR+iOffset;
            _iTempStart = 0xc;
+           _iTempLen = 1;
            _iAccStart = 0x28;
            _bBigEndian = false;
            _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
@@ -87,6 +91,7 @@ int iOffset;
            _iType = IMU_TYPE_LIS3DSH;
            _iAddr = IMU_LIS3DSH_ADDR+iOffset;
            _iTempStart = 0xc;
+           _iTempLen = 1;
            _iAccStart = 0x28;
            _bBigEndian = false;
            _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
@@ -170,6 +175,14 @@ uint8_t ucTemp[4];
             ucTemp[1] = (5<<4); //208Hz iODR << 4; // gyroscope data rate
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          } // gyroscope enable
+         if (_iMode & MODE_STEP) {
+            ucTemp[0] = 0x19; // CTRL10_C
+            ucTemp[1] = (_iMode & MODE_GYRO) ? 0x3e : 0x4; // check 3 axis of gyro are enabled (on by default)
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2); 
+            ucTemp[0] = 0x58; // enable step counter in TAP_CFG register
+            ucTemp[1] = 0x40;
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         }
          ucTemp[0] = 0x16; // CTR7_G - power mode
          //if (_u32Rate <= 52)
          //ucTemp[1] = 0x80; // Enable low power mode
@@ -294,17 +307,30 @@ int BBIMU::getSample(IMU_SAMPLE *pSample)
 uint8_t ucTemp[16];
 int i;
 
-     if (_iMode & MODE_ACCEL) { // read accelerometer info
+     if (_iMode & MODE_ACCEL && _u32Caps & IMU_CAP_ACCELEROMETER) { // read accelerometer info
         I2CReadRegister(&_bbi2c, _iAddr, _iAccStart, ucTemp, 6);
         for (i=0; i<3; i++) { 
            pSample->accel[i] = get16Bits(&ucTemp[i*2]);
         }
      }
-     if (_iMode & MODE_GYRO) { // read gyroscope info
+     if (_iMode & MODE_GYRO && _u32Caps & IMU_CAP_GYROSCOPE) { // read gyroscope info
         I2CReadRegister(&_bbi2c, _iAddr, _iGyroStart, ucTemp, 6);
         for (i=0; i<3; i++) {
            pSample->gyro[i] = get16Bits(&ucTemp[i*2]);
         }
+     }
+     if (_iMode & MODE_TEMP && _u32Caps & IMU_CAP_TEMPERATURE) { // read the temperature
+        I2CReadRegister(&_bbi2c, _iAddr, _iTempStart, ucTemp, _iTempLen);
+        if (_iTempLen == 1) {
+           pSample->temperature = (int)((int8_t)ucTemp[0]) * 10;
+        } else { // two byte temperature value
+           i = get16Bits(ucTemp);
+           pSample->temperature = 250 + ((i * 160)/16);
+        }
+     }
+     if (_iMode & MODE_STEP && _u32Caps & IMU_CAP_PEDOMETER) { // read step count
+        I2CReadRegister(&_bbi2c, _iAddr, _iStepStart, ucTemp, 2);
+        pSample->steps = get16Bits(ucTemp);
      }
      return IMU_SUCCESS;
 } /* getSample() */
