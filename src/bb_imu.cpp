@@ -120,7 +120,9 @@ int iOffset;
           _iAccStart = 0x12;
           _iGyroStart = 0xc;
           _iTempStart = 0x20;
-          _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
+          _iTempLen = 2;
+          _iStepStart = 0x78;
+          _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE | IMU_CAP_PEDOMETER;
           return IMU_SUCCESS;
        }
     }
@@ -133,6 +135,9 @@ int iOffset;
           _bBigEndian = true;
           _iAccStart = 0x43;
           _iGyroStart = 0x3b;
+          _iTempStart = 0x41;
+          _iTempLen = 2;
+          _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
           return IMU_SUCCESS;
        }
     }
@@ -264,6 +269,15 @@ uint8_t ucTemp[4];
          ucTemp[0] = 0x7e; // command
          ucTemp[1] = 0x15; // set gyroscope to normal power mode
          I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         if (_iMode & MODE_STEP) {
+             ucTemp[0] = 0x7a; // STEP_CONF
+             ucTemp[1] = 0x15;
+             ucTemp[2] = 0x03; // normal mode + enabled
+             I2CWrite(&_bbi2c, _iAddr, ucTemp, 3);
+             ucTemp[0] = 0x7b; // enable in separate step?
+             ucTemp[1] = 0x0b;
+             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         }
          break; // BMI160
       case IMU_TYPE_LIS3DH:
       case IMU_TYPE_LIS3DSH:
@@ -325,7 +339,12 @@ int i;
            pSample->temperature = (int)((int8_t)ucTemp[0]) * 10;
         } else { // two byte temperature value
            i = get16Bits(ucTemp);
-           pSample->temperature = 250 + ((i * 160)/16);
+           if (_iType == IMU_TYPE_LSM6DS3)
+              pSample->temperature = 250 + ((i * 160)/16);
+           else if (_iType == IMU_TYPE_MPU6050)
+              pSample->temperature = (i/34) + 365;
+           else if (_iType == IMU_TYPE_BMI160)
+              pSample->temperature = 230 + ((i*10)/512);
         }
      }
      if (_iMode & MODE_STEP && _u32Caps & IMU_CAP_PEDOMETER) { // read step count
