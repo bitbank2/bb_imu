@@ -73,12 +73,16 @@ enum {
 class BBIMU
 {
 public:
-    BBIMU() {_iType = IMU_TYPE_UNDEFINED; }
+    BBIMU() {_iType = IMU_TYPE_UNDEFINED; _iAccRate = iGyroRate = 200; }
     ~BBIMU() {}
 
     int init(int iSDA = -1, int iSCL = -1, bool bBitBang = false, uint32_t u32Speed=400000);
     int start(int iSampleRate = 200, int iMode = MODE_ACCEL | MODE_GYRO);
     int stop(void);
+    void setAccRate(int iRate);
+    void setGyroRate(int iRate);
+    int getAccRate(void);
+    int getGyroRate(void);
     uint32_t caps(void);
     int type(void);
     BBI2C *getBB(void);
@@ -90,10 +94,12 @@ private:
     int _iType;
     int _iMode;
     int _iAccStart, _iGyroStart, _iTempStart; // starting registers
+    int _iAccRate, _iGyroRate; // sample rates
     int _iStepStart;
     int _iTempLen; // length of temp info in bytes
     bool _bBigEndian;
     uint32_t _u32Caps;
     int16_t get16Bits(uint8_t *s);
+    int matchRate(int value, int *pList);
 }; // class BBIMU
 #endif // __BB_IMU__

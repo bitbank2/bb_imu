@@ -15,6 +15,11 @@
 //===========================================================================
 #include "bb_imu.h"
 
+const int16_t lis3dsh_rates[] = {0, 3, 6, 12, 25, 50, 100, 400, 800, 1600, -1};
+const int16_t lsm6ds3_rates[] = {0, 12, 26, 52, 104, 208, 416, 833, 1660, 3330, 6660, -1};
+const int16_t lsm9ds1_accel_rates[] = {0, 10, 50, 119, 238, 476, 952, -1};
+const int16_t lsm9ds1_gyro_rates[] = {0, 15, 60, 119, 238, 476, 952, -1};
+const int16_t mpu6050_rates[] = {0, 3, 7, 15, 31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, -1}; 
 BBI2C * BBIMU::getBB(void)
 {
    return &_bbi2c;
@@ -42,8 +47,8 @@ int iOffset;
            _iType = IMU_TYPE_LSM9DS1;
            _iAddr = IMU_LSM9DS1_ADDR + iOffset;
            _bBigEndian = false;
-           _iAccStart = 0x18;
-           _iGyroStart = 0x28;
+           _iAccStart = 0x28;
+           _iGyroStart = 0x18;
            _iTempStart = 0x15;
            _iTempLen = 2;
            _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_MAGNETOMETER | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
@@ -63,7 +68,7 @@ int iOffset;
            _iTempStart = 0x20;
            _iTempLen = 2;
            _iStepStart = 0x4b;
-           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE | IMU_CAP_PEDOMETER;
+           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
            return IMU_SUCCESS;
        }
     }
@@ -163,21 +168,26 @@ int iOffset;
 int BBIMU::start(int iSampleRate, int iMode)
 {
 uint8_t ucTemp[4];
+int iRate;
 
    _iMode = iMode;
    switch (_iType) {
       case IMU_TYPE_LSM6DS3:
          // If accelerometer enabled
          if (_iMode & MODE_ACCEL) {
+            iRate = 1 + matchRate(_iAccRate, lsm6ds3_rates); 
+            _iAccRate = lsm6ds3_rates[iRate]; // get the quantized value
             ucTemp[0] = 0x10; // CTRL1_XL
-            ucTemp[1] = (5<<4); // 208hz iODR << 4;
+            ucTemp[1] = (iRate<<4); // iODR << 4;
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          } // accelerometer enabled
          // if gyroscope enabled
          if (_iMode & MODE_GYRO) {
+            iRate = 1 + matchRate(_iGyroRate, lsm6ds3_rates);
             ucTemp[0] = 0x11; // CTRL2_G
-            //if (iODR > 8) iODR = 8; // Gyro max rate = 1660hz
-            ucTemp[1] = (5<<4); //208Hz iODR << 4; // gyroscope data rate
+            if (iRate > 8) iRate = 8; // Gyro max rate = 1660hz
+            _iGyroRate = lsm6ds3_rates[iRate]; // get the quantized value
+            ucTemp[1] = (iRate<<4); // gyroscope data rate
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          } // gyroscope enable
          if (_iMode & MODE_STEP) {
@@ -292,11 +302,49 @@ uint8_t ucTemp[4];
          ucTemp[1] = 0x88; // BDU & high res mode enabled
          I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          break; // LIS3DH / LIS3DSH
+      case IMU_TYPE_LSM9DS1:
+         if (_iMode & MODE_ACCEL) {
+            ucTemp[0] = 0x20; // CTRL_REG6_XL (accelerometer control) 
+            ucTemp[1] = 0x80; // output rate 238Hz
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         }
+         break; // LSM9DS1
       default:
          return IMU_ERROR;
    } // switch
    return IMU_SUCCESS;
 } /* start() */
+//
+// Set the accelerometer sampling rate
+// not all rates are possible, so the closest
+// valid value will be chosen. Use getAccRate() to
+// see the actual value used
+//
+void BBIMU::setAccRate(int iRate)
+{
+   _iAccRate = iRate;
+} /* setAccRate() */
+
+int BBIMU::getAccRate(void)
+{
+   return _iAccRate;
+} /* getAccRate() */
+
+//
+// Set the gyroscope sampling rate
+// not all rates are possible, so the closest
+// valid value will be chosen. Use getGyriRate() to 
+// see the actual value used
+//
+void BBIMU::setGyroRate(int iRate)
+{
+   _iGyroRate = iRate;
+} /* setGyroRate() */
+int BBIMU::getGyroRate(void)
+{
+   return _iGyroRate;
+} /* getGyroRate() */
+
 //
 // Read a 16-bit signed integer value from 2 bytes stored at the given pointer addr
 // The member variable _bBigEndian determines the byte order
@@ -345,6 +393,8 @@ int i;
               pSample->temperature = (i/34) + 365;
            else if (_iType == IMU_TYPE_BMI160)
               pSample->temperature = 230 + ((i*10)/512);
+           else if (_iType == IMU_TYPE_LSM9DS1)
+              pSample->temperature = 250 + ((i * 10)/16);
         }
      }
      if (_iMode & MODE_STEP && _u32Caps & IMU_CAP_PEDOMETER) { // read step count
@@ -359,6 +409,25 @@ int i;
 int BBIMU::stop(void)
 {
 } /* stop() */
+//
+// Match the requested rate to the closest supported value
+//
+int BBIMU::matchRate(int value, int *pList)
+{
+int index = 0;
+
+   while (pList[index] != -1) {
+     if (value > pList[index] && value <= pList[index+1]) {
+         break;
+     }
+     index++;
+   }
+   if (pList[index] == -1)
+      index--; // return the max value
+
+   return index;
+} /* matchRate() */
+
 //
 // Return the capability bits of the current device
 //
