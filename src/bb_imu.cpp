@@ -14,11 +14,13 @@
 // limitations under the License.
 //===========================================================================
 #include "bb_imu.h"
+#include "BMI270_config.inl"
 
-const int16_t lis3dsh_rates[] = {0, 3, 6, 12, 25, 50, 100, 400, 800, 1600, -1};
-const int16_t lsm6ds3_rates[] = {0, 12, 26, 52, 104, 208, 416, 833, 1660, 3330, 6660, -1};
-const int16_t lsm9ds1_accel_rates[] = {0, 10, 50, 119, 238, 476, 952, -1};
-const int16_t lsm9ds1_gyro_rates[] = {0, 15, 60, 119, 238, 476, 952, -1};
+int16_t bmi270_rates[] = {0, 1, 2, 3, 6, 12, 25, 50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, -1};
+int16_t lis3dsh_rates[] = {0, 3, 6, 12, 25, 50, 100, 400, 800, 1600, -1};
+int16_t lsm6ds3_rates[] = {0, 12, 26, 52, 104, 208, 416, 833, 1660, 3330, 6660, -1};
+int16_t lsm9ds1_accel_rates[] = {0, 10, 50, 119, 238, 476, 952, -1};
+int16_t lsm9ds1_gyro_rates[] = {0, 15, 60, 119, 238, 476, 952, -1};
 const int16_t mpu6050_rates[] = {0, 3, 7, 15, 31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, -1}; 
 BBI2C * BBIMU::getBB(void)
 {
@@ -39,6 +41,39 @@ int iOffset;
 
     for (iOffset = 0; iOffset<2; iOffset++) { // try both addresses of each device
     // probe the I2C bus for devices
+    if (I2CTest(&_bbi2c, IMU_BNO055_ADDR+iOffset)) {
+       // try to read the "CHIP_ID" register
+       ucTemp[0] = 0;
+       I2CReadRegister(&_bbi2c, IMU_BNO055_ADDR + iOffset, 0x0, ucTemp, 1);
+       if (ucTemp[0] == 0xa0) {
+           _iType = IMU_TYPE_BNO055;
+           _iAddr = IMU_BNO055_ADDR + iOffset;
+           _bBigEndian = false;
+           _iMagStart = 0xe;
+           _iAccStart = 0x8;
+           _iGyroStart = 0x14;
+           _iTempStart = 0x34;
+           _iTempLen = 1;
+           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_MAGNETOMETER | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE | IMU_CAP_3DPOS;
+           return IMU_SUCCESS;
+       }
+    }
+    if (I2CTest(&_bbi2c, IMU_BMI270_ADDR+iOffset)) {
+       // try to read the CHIP_ID register
+       ucTemp[0] = 0;
+       I2CReadRegister(&_bbi2c, IMU_BMI270_ADDR+iOffset, 0x0, ucTemp, 1);
+       if (ucTemp[0] == 0x24) {
+           _iType = IMU_TYPE_BMI270;
+           _iAddr = IMU_BMI270_ADDR + iOffset;
+           _bBigEndian = false;
+           _iAccStart = 0xc;
+           _iGyroStart = 0x12;
+           _iTempStart = 0x22;
+           _iTempLen = 2;
+           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
+           return IMU_SUCCESS;
+       } 
+    }
     if (I2CTest(&_bbi2c, IMU_LSM9DS1_ADDR+iOffset)) {
        // try to read the "WHO_AM_I" register
        ucTemp[0] = 0;
@@ -138,8 +173,8 @@ int iOffset;
           _iType = IMU_TYPE_MPU6050;
           _iAddr = IMU_MPU6050_ADDR+iOffset;
           _bBigEndian = true;
-          _iAccStart = 0x43;
-          _iGyroStart = 0x3b;
+          _iAccStart = 0x3b;
+          _iGyroStart = 0x43;
           _iTempStart = 0x41;
           _iTempLen = 2;
           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
@@ -155,6 +190,7 @@ int iOffset;
           _bBigEndian = true;
           _iAccStart = 0x3b;
           _iGyroStart = 0x43;
+          _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
           return IMU_SUCCESS;
        }
     }
@@ -172,10 +208,56 @@ int iRate;
 
    _iMode = iMode;
    switch (_iType) {
+      case IMU_TYPE_BMI270:
+         ucTemp[0] = 0x7e; // CMD_REG_ADDR
+         ucTemp[1] = 0xb6; // SOFT_RESET_CMD
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         delay(100);
+         ucTemp[0] = 0x7c; // power configuration
+         ucTemp[1] = 0; // pwr save disabled
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         delay(4);
+ //        ucTemp[0] = 0x5b; // INIT_ADDR_0
+ //        ucTemp[1] = 0x00;
+ //        ucTemp[2] = 0x00;
+ //        I2CWrite(&_bbi2c, _iAddr, ucTemp, 3);
+         I2CWrite(&_bbi2c, _iAddr, (uint8_t *)bmi270_config_file, sizeof(bmi270_config_file));
+         ucTemp[0] = 0x59; // INIT_CTRL
+         ucTemp[1] = 1; // start initialization
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+//         ucTemp[0] = 0x58; // INT_MAP_DATA_ADDR
+//         ucTemp[1] = 0xff;
+//         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         delay(100);
+         // set rate and range
+         _iAccRate = iSampleRate;
+         iRate = 1+matchRate(_iAccRate, &bmi270_rates[0]); 
+         _iAccRate = bmi270_rates[iRate]; // get the quantized value
+         ucTemp[0] = 0x40; // accel rate (0x41 = range)
+         ucTemp[1] = iRate;
+         ucTemp[2] = 0x00; // +/- 2g range
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 3);
+         // set the same rate for the gyroscope
+         ucTemp[0] = 0x42; // gyro rate (0x43 = range)
+         ucTemp[1] = iRate;
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+// enable requested sensors
+         ucTemp[0] = 0x7d; // power control
+         ucTemp[1] = 8; // enable temperature register
+         if (_iMode & MODE_ACCEL) {
+            ucTemp[1] |= 4; // enable accelerometer
+         }
+         if (_iMode & MODE_GYRO) {
+            ucTemp[1] |= 2; // enable gyroscope
+         }
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         break; // BMI270
+
       case IMU_TYPE_LSM6DS3:
          // If accelerometer enabled
          if (_iMode & MODE_ACCEL) {
-            iRate = 1 + matchRate(_iAccRate, lsm6ds3_rates); 
+            _iAccRate = iSampleRate;
+            iRate = 1 + matchRate(_iAccRate, &lsm6ds3_rates[0]); 
             _iAccRate = lsm6ds3_rates[iRate]; // get the quantized value
             ucTemp[0] = 0x10; // CTRL1_XL
             ucTemp[1] = (iRate<<4); // iODR << 4;
@@ -183,7 +265,8 @@ int iRate;
          } // accelerometer enabled
          // if gyroscope enabled
          if (_iMode & MODE_GYRO) {
-            iRate = 1 + matchRate(_iGyroRate, lsm6ds3_rates);
+            _iGyroRate = iSampleRate;
+            iRate = 1 + matchRate(_iGyroRate, &lsm6ds3_rates[0]);
             ucTemp[0] = 0x11; // CTRL2_G
             if (iRate > 8) iRate = 8; // Gyro max rate = 1660hz
             _iGyroRate = lsm6ds3_rates[iRate]; // get the quantized value
@@ -225,6 +308,10 @@ int iRate;
          break; // ADXL345
       case IMU_TYPE_MPU6886:
             ucTemp[0] = 0x6b; // PWR_MGMT_1
+            ucTemp[1] = 0x00;
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+            delay(10);
+
             ucTemp[1] = 0x80; // reset chip
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
             delay(10);
@@ -232,7 +319,7 @@ int iRate;
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
             delay(10);
             ucTemp[0] = 0x1c; // ACCEL_CONFIG
-            ucTemp[1] = 0x00; // full scale = 2G, all axes enabled
+            ucTemp[1] = 0x10; // full scale = 2G, all axes enabled
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
             delay(1);
             ucTemp[0] = 0x1b; // GYRO_CONFIG
@@ -266,10 +353,10 @@ int iRate;
             ucTemp[0] = 0x37; // INT_PIN_CFG
             ucTemp[1] = 0x22; // latch int enable
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
-            delay(1);
-            ucTemp[0] = 0x38; // INT_ENABLE
-            ucTemp[1] = 0x01; // enable interrupt on data ready
-            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+//            delay(1);
+//            ucTemp[0] = 0x38; // INT_ENABLE
+//            ucTemp[1] = 0x01; // enable interrupt on data ready
+//            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          break; // MPU6886
       case IMU_TYPE_BMI160:
          ucTemp[0] = 0x7e; // send command
@@ -314,6 +401,32 @@ int iRate;
    } // switch
    return IMU_SUCCESS;
 } /* start() */
+int BBIMU::reset(void)
+{
+    return IMU_SUCCESS;
+} /* reset() */
+
+void BBIMU::setAccScale(int iScale)
+{
+   _iAccScale = iScale;
+} /* setAccScale() */
+
+void BBIMU::setGyroScale(int iScale)
+{
+   _iGyroScale = iScale;
+} /* setGyroScale() */
+
+int BBIMU::getAccScale(void)
+{
+   return _iAccScale;
+} /* getAccScale() */
+
+int BBIMU::getGyroScale(void)
+{
+   return _iGyroScale;
+} /* getGyroScale() */
+
+
 //
 // Set the accelerometer sampling rate
 // not all rates are possible, so the closest
@@ -391,7 +504,7 @@ int i;
               pSample->temperature = 250 + ((i * 160)/16);
            else if (_iType == IMU_TYPE_MPU6050)
               pSample->temperature = (i/34) + 365;
-           else if (_iType == IMU_TYPE_BMI160)
+           else if (_iType == IMU_TYPE_BMI160 || _iType == IMU_TYPE_BMI270)
               pSample->temperature = 230 + ((i*10)/512);
            else if (_iType == IMU_TYPE_LSM9DS1)
               pSample->temperature = 250 + ((i * 10)/16);
@@ -408,11 +521,12 @@ int i;
 //
 int BBIMU::stop(void)
 {
+    return IMU_SUCCESS;
 } /* stop() */
 //
 // Match the requested rate to the closest supported value
 //
-int BBIMU::matchRate(int value, int *pList)
+int BBIMU::matchRate(int value, int16_t *pList)
 {
 int index = 0;
 

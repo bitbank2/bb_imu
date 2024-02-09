@@ -24,9 +24,10 @@
 #define IMU_CAP_ACCELEROMETER 1
 #define IMU_CAP_GYROSCOPE 2
 #define IMU_CAP_MAGNETOMETER 4
-#define IMU_CAP_FIFO 8
-#define IMU_CAP_TEMPERATURE 16
-#define IMU_CAP_PEDOMETER 32
+#define IMU_CAP_3DPOS 8
+#define IMU_CAP_FIFO 16
+#define IMU_CAP_TEMPERATURE 32 
+#define IMU_CAP_PEDOMETER 64
 
 typedef struct _tagsample
 {
@@ -49,6 +50,8 @@ enum {
    IMU_TYPE_LIS3DH,
    IMU_TYPE_LIS3DSH,
    IMU_TYPE_MPU6886,
+   IMU_TYPE_BNO055,
+   IMU_TYPE_BMI270,
    TYPE_COUNT
 };
 
@@ -56,7 +59,8 @@ enum {
 #define MODE_GYRO  2
 #define MODE_TEMP  4
 #define MODE_FIFO  8
-#define MODE_STEP  16
+#define MODE_3DPOS 16
+#define MODE_STEP  32
 
 #define IMU_SUCCESS 0
 #define IMU_ERROR -1
@@ -69,18 +73,25 @@ enum {
 #define IMU_LSM6DS3_ADDR 0x6a
 #define IMU_LIS3DH_ADDR 0x18
 #define IMU_LIS3DSH_ADDR 0x1c
+#define IMU_BNO055_ADDR 0x28
+#define IMU_BMI270_ADDR 0x68
 
 class BBIMU
 {
 public:
-    BBIMU() {_iType = IMU_TYPE_UNDEFINED; _iAccRate = iGyroRate = 200; }
+    BBIMU() {_iType = IMU_TYPE_UNDEFINED; _iAccRate = _iGyroRate = 200; }
     ~BBIMU() {}
 
     int init(int iSDA = -1, int iSCL = -1, bool bBitBang = false, uint32_t u32Speed=400000);
     int start(int iSampleRate = 200, int iMode = MODE_ACCEL | MODE_GYRO);
     int stop(void);
+    int reset(void);
+    void setAccScale(int iScale);
+    void setGyroScale(int iScale);
     void setAccRate(int iRate);
     void setGyroRate(int iRate);
+    int getAccScale(void);
+    int getGyroScale(void);
     int getAccRate(void);
     int getGyroRate(void);
     uint32_t caps(void);
@@ -93,13 +104,14 @@ private:
     int _iAddr;
     int _iType;
     int _iMode;
-    int _iAccStart, _iGyroStart, _iTempStart; // starting registers
+    int _iMagStart, _iAccStart, _iGyroStart, _iTempStart; // starting registers
     int _iAccRate, _iGyroRate; // sample rates
+    int _iAccScale, _iGyroScale; // gravity scale
     int _iStepStart;
     int _iTempLen; // length of temp info in bytes
     bool _bBigEndian;
     uint32_t _u32Caps;
     int16_t get16Bits(uint8_t *s);
-    int matchRate(int value, int *pList);
+    int matchRate(int value, int16_t *pList);
 }; // class BBIMU
 #endif // __BB_IMU__
