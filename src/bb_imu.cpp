@@ -94,7 +94,7 @@ int iOffset;
        // try to read the "WHO_AM_I" register
        ucTemp[0] = 0;
        I2CReadRegister(&_bbi2c, IMU_LSM6DS3_ADDR + iOffset, 0x0f, ucTemp, 1);
-       if (ucTemp[0] == 0x69) {
+       if (ucTemp[0] == 0x69 || ucTemp[0] == 0x6a) { // normal or "C" variant
            _iType = IMU_TYPE_LSM6DS3;
            _iAddr = IMU_LSM6DS3_ADDR + iOffset;
            _bBigEndian = false;
@@ -197,6 +197,125 @@ int iOffset;
     } // for each address offset
     return IMU_ERROR;
 } /* init() */
+int BBIMU::getQueuedSamples(int16_t *pSamples, int *iNumSamples, int iMaxSamples)
+{
+int16_t *d = (int16_t *)pSamples;
+uint8_t ucTemp[4];
+int i, iNum, iCount;
+
+    if (_iType == IMU_TYPE_LSM6DS3) {
+        // read the FIFO status
+        if (!I2CReadRegister(&_bbi2c, _iAddr, 0x3a, ucTemp, 4))
+        {
+            return IMU_ERROR;
+        }
+//        if (ucTemp[1] & 0x10) { // FIFO is empty
+//            *iNumSamples = 0;
+//            return MT_SUCCESS;
+//        }
+        iNum = ucTemp[0] + ((ucTemp[1] & 0xf) << 8); // number of unread 16-bit axis in FIFO (12 bits)
+        if (iNum == 0) {
+            *iNumSamples = 0;
+            return IMU_SUCCESS;
+        }
+        iCount = 0;
+        if (_iMode & MODE_ACCEL) iCount += 3;
+        if (_iMode & MODE_GYRO) iCount += 3;
+        if ((iNum / iCount) > iMaxSamples) {
+            iNum = iCount * iMaxSamples;
+        }
+        for (i=0; i<iNum; i++) { // read an even number of samples
+            if (!I2CReadRegister(&_bbi2c, _iAddr, 0x3e, ucTemp, 2))
+            {
+                return IMU_ERROR;
+            }
+            *d++ = (int16_t)(ucTemp[0] | (ucTemp[1]<<8));
+        }
+        *iNumSamples = iNum / iCount;
+    }
+    return IMU_SUCCESS;
+} /* getQueuedSamples() */
+
+//
+// Configure the channels used for the FIFO and activate that mode
+//
+int BBIMU::configFIFO(void)
+{
+    uint8_t ucEnable, ucTemp[4];
+    int iODR;
+
+        if (_iType == IMU_TYPE_LSM6DS3) {
+            // calculate the ODR (output data rate)
+            iODR = 0;
+            if (_iAccRate == 12) {
+                iODR = 1; // 12.5hz low power
+            } else if (_iAccRate == 26) {
+                iODR = 2; // 26hz
+            } else if (_iAccRate == 52) {
+                iODR = 3; // 52hz
+            } else if (_iAccRate == 104) {
+                iODR = 4; // 104hz
+            } else if (_iAccRate == 208) {
+                iODR = 5; // 208hz
+            } else if (_iAccRate == 416) {
+                iODR = 6; // 416hz
+            } else if (_iAccRate == 833) {
+                iODR = 7; // 833hz
+            } else if (_iAccRate == 1660) {
+                iODR = 8; // 1660hz
+            } else if (_iAccRate == 3330) {
+                iODR = 9; // 3330hz
+            } else if (_iAccRate == 6660) {
+                iODR = 10; // 6660hz
+            }
+            // set bypass mode first to reset the FIFO
+            ucTemp[0] = 0x0a; // FIFO_CTRL5
+            ucTemp[1] = 0; // bypass mode (FIFO_MODE [2:0] = 000)
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+            // set the FIFO threshold value
+            ucTemp[0] = 6; // FIFO_CTRL1 & FIFO_CTRL2
+            ucTemp[1] = 0; // low byte
+            ucTemp[2] = 8; // high byte (2048 samples)
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 3);
+
+            // Enable the accelerometer, gyro or both
+            ucEnable = 0;
+            if (_iMode & MODE_ACCEL) {
+                // enable only the requested channels
+//                ucTemp[0] = 0x18; // CTRL9_XL select channels for accelerometer
+//                ucTemp[1] = 0;
+//                if (u32Channels & IMU_CHANNEL_ACC_X) ucTemp[1] |= 8;
+//                if (u32Channels & IMU_CHANNEL_ACC_Y) ucTemp[1] |= 16;
+//                if (u32Channels & IMU_CHANNEL_ACC_Z) ucTemp[1] |= 32;
+//                I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+                ucEnable |= 0x01; // enable accelerometer with no decimation
+            }
+            if (_iMode & MODE_GYRO) {
+                // enable only the requested channels
+//                ucTemp[0] = 0x19; // CTRL10_C select channels for gyroscope
+//                ucTemp[1] = 0;
+//                if (u32Channels & IMU_CHANNEL_GYR_X) ucTemp[1] |= 8;
+//                if (u32Channels & IMU_CHANNEL_GYR_Y) ucTemp[1] |= 16;
+//                if (u32Channels & IMU_CHANNEL_GYR_Z) ucTemp[1] |= 32;
+//                I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+                ucEnable |= 0x8; // enable gyroscope with no decimation
+            }
+            ucTemp[0] = 0x8; // FIFO_CTRL3
+            ucTemp[1] = ucEnable; // enables acc, gyr or both
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+            // turn on the FIFO
+            ucTemp[0] = 0x0a; // FIFO_CTRL5
+            ucTemp[1] = (iODR << 3); // FIFO mode enabled
+            ucTemp[1] |= 0x06; // continuous update - old data is tossed as new arrives
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+    //        ucTemp[0] = 0x1a; // MASTR_CONFIG
+    //        ucTemp[1] = 0x00; // start?
+    //        I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+        }
+        return IMU_SUCCESS;
+
+} /* configFIFO() */
+
 //
 // Start the accelerometer, gyroscope or both
 // with the given sample rate
@@ -474,6 +593,30 @@ int16_t i;
    }
    return i;
 } /* get16Bits() */
+//
+// Get a single channel's accelerometer or gyroscope sample
+// This can speed up access if you just need to read 1 channel
+//
+int16_t BBIMU::getOneChannel(uint32_t u32Channel)
+{
+    int iOff = 0;
+    uint8_t ucTemp[4] = {0};
+    
+    if (_iMode & MODE_ACCEL && _u32Caps & IMU_CAP_ACCELEROMETER && (u32Channel & IMU_CHANNEL_ACC_X | IMU_CHANNEL_ACC_Y | IMU_CHANNEL_ACC_Z)) { // read accelerometer info
+        iOff = _iAccStart;
+        if (u32Channel & IMU_CHANNEL_ACC_Y) iOff += 2;
+        else if (u32Channel & IMU_CHANNEL_ACC_Z) iOff += 4;
+    }
+    if (_iMode & MODE_GYRO && _u32Caps & IMU_CAP_ACCELEROMETER && (u32Channel & IMU_CHANNEL_ACC_X | IMU_CHANNEL_ACC_Y | IMU_CHANNEL_ACC_Z)) { // read accelerometer info
+        iOff = _iGyroStart;
+        if (u32Channel & IMU_CHANNEL_GYR_Y) iOff += 2;
+        else if (u32Channel & IMU_CHANNEL_GYR_Z) iOff += 4;
+    }
+    
+    I2CReadRegister(&_bbi2c, _iAddr, iOff, ucTemp, 2);
+    return get16Bits(ucTemp);
+} /* getOneChannel() */
+
 //
 // Read an accel, gyro, and temp sample depending on the operating mode
 //

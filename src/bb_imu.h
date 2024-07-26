@@ -76,6 +76,17 @@ enum {
 #define IMU_BNO055_ADDR 0x28
 #define IMU_BMI270_ADDR 0x68
 
+// bits to enable specific channels
+#define IMU_CHANNEL_ACC_X 1
+#define IMU_CHANNEL_ACC_Y 2
+#define IMU_CHANNEL_ACC_Z 4
+#define IMU_CHANNEL_GYR_X 8
+#define IMU_CHANNEL_GYR_Y 16
+#define IMU_CHANNEL_GYR_Z 32
+#define IMU_CHANNEL_MAG_X 64
+#define IMU_CHANNEL_MAG_Y 128
+#define IMU_CHANNEL_MAG_Z 256
+
 class BBIMU
 {
 public:
@@ -86,6 +97,8 @@ public:
     int start(int iSampleRate = 200, int iMode = MODE_ACCEL | MODE_GYRO);
     int stop(void);
     int reset(void);
+    int configFIFO(void);
+    int getQueuedSamples(int16_t *pSamples, int *iNumSamples, int iMaxSamples);
     void setAccScale(int iScale);
     void setGyroScale(int iScale);
     void setAccRate(int iRate);
@@ -94,6 +107,7 @@ public:
     int getGyroScale(void);
     int getAccRate(void);
     int getGyroRate(void);
+    int16_t getOneChannel(uint32_t u32Channel);
     uint32_t caps(void);
     int type(void);
     BBI2C *getBB(void);
