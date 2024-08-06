@@ -98,6 +98,7 @@ public:
     int stop(void);
     int reset(void);
     int configFIFO(void);
+    int configIRQ(bool bOn);
     int getQueuedSamples(int16_t *pSamples, int *iNumSamples, int iMaxSamples);
     void setAccScale(int iScale);
     void setGyroScale(int iScale);
@@ -108,6 +109,7 @@ public:
     int getAccRate(void);
     int getGyroRate(void);
     int16_t getOneChannel(uint32_t u32Channel);
+    uint8_t getStatus(void);
     uint32_t caps(void);
     int type(void);
     BBI2C *getBB(void);
@@ -118,7 +120,7 @@ private:
     int _iAddr;
     int _iType;
     int _iMode;
-    int _iMagStart, _iAccStart, _iGyroStart, _iTempStart; // starting registers
+    int _iStatus, _iMagStart, _iAccStart, _iGyroStart, _iTempStart; // starting registers
     int _iAccRate, _iGyroRate; // sample rates
     int _iAccScale, _iGyroScale; // gravity scale
     int _iStepStart;

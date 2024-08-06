@@ -98,6 +98,7 @@ int iOffset;
            _iType = IMU_TYPE_LSM6DS3;
            _iAddr = IMU_LSM6DS3_ADDR + iOffset;
            _bBigEndian = false;
+           _iStatus = 0x1e; // status register
            _iAccStart = 0x28;
            _iGyroStart = 0x22;
            _iTempStart = 0x20;
@@ -315,6 +316,48 @@ int BBIMU::configFIFO(void)
         return IMU_SUCCESS;
 
 } /* configFIFO() */
+
+//
+// Read the status register
+// This is usually needed to clear the last interrupt event
+//
+uint8_t BBIMU::getStatus(void)
+{
+    uint8_t uc;
+    I2CReadRegister(&_bbi2c, _iAddr, _iStatus, &uc, 1);
+    return uc;
+} /* getStatus() */
+
+int BBIMU::configIRQ(bool bOn)
+{
+uint8_t ucTemp[4];
+    
+    switch (_iType) {
+        case IMU_TYPE_BMI270:
+            break;
+        case IMU_TYPE_LSM6DS3:
+            ucTemp[0] = 0x0d; // INT1_CTRL
+            ucTemp[1] = (bOn) ? 0x03 : 0x00; // INT1_DRDY_G | INT1_DRDY_XL; // data ready acc+gyr
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+            break;
+        case IMU_TYPE_MPU6050:
+            break;
+        case IMU_TYPE_ADXL345:
+            break;
+        case IMU_TYPE_MPU6886:
+            break;
+        case IMU_TYPE_BMI160:
+            break;
+        case IMU_TYPE_LIS3DH:
+        case IMU_TYPE_LIS3DSH:
+           break; // LIS3DH / LIS3DSH
+        case IMU_TYPE_LSM9DS1:
+           break; // LSM9DS1
+        default:
+           return IMU_ERROR;
+    } // switch on type
+    return IMU_SUCCESS;
+} /* configIRQ() */
 
 //
 // Start the accelerometer, gyroscope or both
@@ -602,12 +645,12 @@ int16_t BBIMU::getOneChannel(uint32_t u32Channel)
     int iOff = 0;
     uint8_t ucTemp[4] = {0};
     
-    if (_iMode & MODE_ACCEL && _u32Caps & IMU_CAP_ACCELEROMETER && (u32Channel & IMU_CHANNEL_ACC_X | IMU_CHANNEL_ACC_Y | IMU_CHANNEL_ACC_Z)) { // read accelerometer info
+    if ((_iMode & MODE_ACCEL) && (_u32Caps & IMU_CAP_ACCELEROMETER) && (u32Channel & (IMU_CHANNEL_ACC_X | IMU_CHANNEL_ACC_Y | IMU_CHANNEL_ACC_Z))) { // read accelerometer info
         iOff = _iAccStart;
         if (u32Channel & IMU_CHANNEL_ACC_Y) iOff += 2;
         else if (u32Channel & IMU_CHANNEL_ACC_Z) iOff += 4;
     }
-    if (_iMode & MODE_GYRO && _u32Caps & IMU_CAP_ACCELEROMETER && (u32Channel & IMU_CHANNEL_ACC_X | IMU_CHANNEL_ACC_Y | IMU_CHANNEL_ACC_Z)) { // read accelerometer info
+    if ((_iMode & MODE_GYRO) && (_u32Caps & IMU_CAP_ACCELEROMETER) && (u32Channel & (IMU_CHANNEL_ACC_X | IMU_CHANNEL_ACC_Y | IMU_CHANNEL_ACC_Z))) { // read accelerometer info
         iOff = _iGyroStart;
         if (u32Channel & IMU_CHANNEL_GYR_Y) iOff += 2;
         else if (u32Channel & IMU_CHANNEL_GYR_Z) iOff += 4;
