@@ -22,6 +22,8 @@ int16_t lsm6ds3_rates[] = {0, 12, 26, 52, 104, 208, 416, 833, 1660, 3330, 6660, 
 int16_t lsm9ds1_accel_rates[] = {0, 10, 50, 119, 238, 476, 952, -1};
 int16_t lsm9ds1_gyro_rates[] = {0, 15, 60, 119, 238, 476, 952, -1};
 const int16_t mpu6050_rates[] = {0, 3, 7, 15, 31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, -1}; 
+const int16_t qmi8658_accel_rates[] = {31, 62, 125, 250, 500, 1000, -1};
+const int16_t qmi8658_gyro_rates[] = {29, 58, 117, 235, 470, 940, 1880, 3760, 7520, -1};
 BBI2C * BBIMU::getBB(void)
 {
    return &_bbi2c;
@@ -41,6 +43,26 @@ int iOffset;
 
     for (iOffset = 0; iOffset<2; iOffset++) { // try both addresses of each device
     // probe the I2C bus for devices
+    if (I2CTest(&_bbi2c, IMU_QMI8658_ADDR+iOffset)) {
+       // try to read the "WHOAMI" register
+       ucTemp[0] = 0;
+       I2CReadRegister(&_bbi2c, IMU_QMI8658_ADDR+iOffset, 0, ucTemp, 1);
+       if (ucTemp[0] == 0x05) {
+          _iType = IMU_TYPE_QMI8658;
+          _iAddr = IMU_QMI8658_ADDR + iOffset;
+          _bBigEndian = false;
+          _iAccStart = 0x35;
+          _iGyroStart = 0x3b;
+          _iStatus = 0x2e; // status register
+          _iTempStart = 0x33;
+          _iTempLen = 2;
+          _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE | IMU_CAP_3DPOS;
+          ucTemp[0] = 2; // CTRL1
+          ucTemp[1] = 0x40; // enable auto-increment of addresses
+          I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+           return IMU_SUCCESS;
+       }
+    }
     if (I2CTest(&_bbi2c, IMU_BNO055_ADDR+iOffset)) {
        // try to read the "CHIP_ID" register
        ucTemp[0] = 0;
@@ -170,7 +192,7 @@ int iOffset;
     if (I2CTest(&_bbi2c, IMU_MPU6050_ADDR+iOffset)) {
        ucTemp[0] = 0;
        I2CReadRegister(&_bbi2c, IMU_MPU6050_ADDR+iOffset, 0x75, ucTemp, 1); // get ID
-       if (ucTemp[0] == 0x68) {
+       if (ucTemp[0] == 0x68) { // MPU6050
           _iType = IMU_TYPE_MPU6050;
           _iAddr = IMU_MPU6050_ADDR+iOffset;
           _bBigEndian = true;
@@ -180,6 +202,18 @@ int iOffset;
           _iTempLen = 2;
           _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
           return IMU_SUCCESS;
+       } else if (ucTemp[0] == 0x70) { // MPU6500
+          _iType = IMU_TYPE_MPU6500;
+          _iAddr = IMU_MPU6050_ADDR+iOffset;
+          _bBigEndian = true;
+          _iAccStart = 0x3b;
+          _iGyroStart = 0x43;
+          _iTempStart = 0x41;
+          _iTempLen = 2;
+          _u32Caps = IMU_CAP_ACCELEROMETER | IMU_CAP_GYROSCOPE | IMU_CAP_FIFO | IMU_CAP_TEMPERATURE;
+          return IMU_SUCCESS;
+       } else {
+      //    Serial.printf("reg 75h returned 0x%02x\n", ucTemp[0]);
        }
     }
     if (I2CTest(&_bbi2c, IMU_MPU6886_ADDR+iOffset)) {
@@ -341,6 +375,7 @@ uint8_t ucTemp[4];
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
             break;
         case IMU_TYPE_MPU6050:
+        case IMU_TYPE_MPU6500:
             break;
         case IMU_TYPE_ADXL345:
             break;
@@ -370,6 +405,31 @@ int iRate;
 
    _iMode = iMode;
    switch (_iType) {
+      case IMU_TYPE_QMI8658:
+         ucTemp[0] = 8; // CTRL7
+         ucTemp[1] = 0xa4;
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2); // first disable acc+gyro
+
+         if (_iMode & MODE_ACCEL) {
+            iRate = matchRate(_iAccRate, (int16_t *)&qmi8658_accel_rates[0]);
+            iRate = (8-iRate) & 0xf; // reverse order
+            ucTemp[0] = 3; // CTRL2 (accel control)
+            ucTemp[1] = iRate | 0x00; // enable accel +/-2g full scale
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2); 
+         }
+         if (_iMode & MODE_GYRO) {
+            iRate = matchRate(_iAccRate, (int16_t *)&qmi8658_gyro_rates[0]);
+            iRate = (8-iRate) & 0xf; // reverse order
+            ucTemp[0] = 4; // CTRL3 (gyro control)
+            ucTemp[1] = iRate | 0x30; // full scale +/-128 dps
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         } 
+         ucTemp[0] = 8; // CTRL7
+         ucTemp[1] = 0xa4;
+         if (_iMode & MODE_GYRO) ucTemp[1] |= 2; // enable gyro
+         if (_iMode & MODE_ACCEL) ucTemp[1] |= 1; // enable accel
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         break;
       case IMU_TYPE_BMI270:
          ucTemp[0] = 0x7e; // CMD_REG_ADDR
          ucTemp[1] = 0xb6; // SOFT_RESET_CMD
@@ -451,6 +511,7 @@ int iRate;
          I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          break;
       case IMU_TYPE_MPU6050:
+      case IMU_TYPE_MPU6500:
 // pwr mgmt 1 register
 // bits: 7=reset, 6=sleep, 5=cycle, 4=n/a, 3=temp_disable, 2-0=clock select
          ucTemp[0] = 0x6b; // power management 1 register
@@ -688,7 +749,7 @@ int i;
            i = get16Bits(ucTemp);
            if (_iType == IMU_TYPE_LSM6DS3)
               pSample->temperature = 250 + ((i * 160)/16);
-           else if (_iType == IMU_TYPE_MPU6050)
+           else if (_iType == IMU_TYPE_MPU6050 || _iType == IMU_TYPE_MPU6500)
               pSample->temperature = (i/34) + 365;
            else if (_iType == IMU_TYPE_BMI160 || _iType == IMU_TYPE_BMI270)
               pSample->temperature = 230 + ((i*10)/512);

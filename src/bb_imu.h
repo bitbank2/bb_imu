@@ -52,6 +52,8 @@ enum {
    IMU_TYPE_MPU6886,
    IMU_TYPE_BNO055,
    IMU_TYPE_BMI270,
+   IMU_TYPE_QMI8658,
+   IMU_TYPE_MPU6500,
    TYPE_COUNT
 };
 
@@ -75,6 +77,7 @@ enum {
 #define IMU_LIS3DSH_ADDR 0x1c
 #define IMU_BNO055_ADDR 0x28
 #define IMU_BMI270_ADDR 0x68
+#define IMU_QMI8658_ADDR 0x6a
 
 // bits to enable specific channels
 #define IMU_CHANNEL_ACC_X 1
