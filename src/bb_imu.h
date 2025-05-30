@@ -57,6 +57,14 @@ enum {
    TYPE_COUNT
 };
 
+// Accelerometer scale
+enum {
+   ACCEL_SCALE_2G=0,
+   ACCEL_SCALE_4G,
+   ACCEL_SCALE_8G,
+   ACCEL_SCALE_16G
+};
+
 #define MODE_ACCEL 1
 #define MODE_GYRO  2
 #define MODE_TEMP  4

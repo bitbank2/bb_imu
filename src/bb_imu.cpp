@@ -24,6 +24,8 @@ int16_t lsm9ds1_gyro_rates[] = {0, 15, 60, 119, 238, 476, 952, -1};
 const int16_t mpu6050_rates[] = {0, 3, 7, 15, 31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, -1}; 
 const int16_t qmi8658_accel_rates[] = {31, 62, 125, 250, 500, 1000, -1};
 const int16_t qmi8658_gyro_rates[] = {29, 58, 117, 235, 470, 940, 1880, 3760, 7520, -1};
+// The order is not linear: 2, 16, 4, 8
+const uint8_t lsm6ds3_scales[4] = {0,2,3,1};
 BBI2C * BBIMU::getBB(void)
 {
    return &_bbi2c;
@@ -457,7 +459,7 @@ int iRate;
          _iAccRate = bmi270_rates[iRate]; // get the quantized value
          ucTemp[0] = 0x40; // accel rate (0x41 = range)
          ucTemp[1] = iRate;
-         ucTemp[2] = 0x00; // +/- 2g range
+         ucTemp[2] = _iAccScale; // +/- 2/4/8/16g range
          I2CWrite(&_bbi2c, _iAddr, ucTemp, 3);
          // set the same rate for the gyroscope
          ucTemp[0] = 0x42; // gyro rate (0x43 = range)
@@ -482,7 +484,7 @@ int iRate;
             iRate = 1 + matchRate(_iAccRate, &lsm6ds3_rates[0]); 
             _iAccRate = lsm6ds3_rates[iRate]; // get the quantized value
             ucTemp[0] = 0x10; // CTRL1_XL
-            ucTemp[1] = (iRate<<4); // iODR << 4;
+            ucTemp[1] = (iRate<<4) | (lsm6ds3_scales[_iAccScale] << 2); // iODR << 4;
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          } // accelerometer enabled
          // if gyroscope enabled
@@ -542,7 +544,7 @@ int iRate;
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
             delay(10);
             ucTemp[0] = 0x1c; // ACCEL_CONFIG
-            ucTemp[1] = 0x10; // full scale = 2G, all axes enabled
+            ucTemp[1] = (_iAccScale << 3); // set scale, all axes enabled
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
             delay(1);
             ucTemp[0] = 0x1b; // GYRO_CONFIG
@@ -729,6 +731,14 @@ int BBIMU::getSample(IMU_SAMPLE *pSample)
 uint8_t ucTemp[16];
 int i;
 
+     if (_iMode == (MODE_ACCEL | MODE_GYRO) && (_iType == IMU_TYPE_BMI160 || _iType == IMU_TYPE_BMI270)) { // we can read the accel+gyro together to reduce the latency
+        I2CReadRegister(&_bbi2c, _iAddr, _iAccStart, ucTemp, 12);
+        for (i=0; i<3; i++) {
+           pSample->accel[i] = get16Bits(&ucTemp[i*2]);
+           pSample->gyro[i] = get16Bits(&ucTemp[(i*2)+6]);
+        }
+        return IMU_SUCCESS;
+     }
      if (_iMode & MODE_ACCEL && _u32Caps & IMU_CAP_ACCELEROMETER) { // read accelerometer info
         I2CReadRegister(&_bbi2c, _iAddr, _iAccStart, ucTemp, 6);
         for (i=0; i<3; i++) { 
