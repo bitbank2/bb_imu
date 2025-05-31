@@ -26,6 +26,8 @@ const int16_t qmi8658_accel_rates[] = {31, 62, 125, 250, 500, 1000, -1};
 const int16_t qmi8658_gyro_rates[] = {29, 58, 117, 235, 470, 940, 1880, 3760, 7520, -1};
 // The order is not linear: 2, 16, 4, 8
 const uint8_t lsm6ds3_scales[4] = {0,2,3,1};
+const uint8_t lis3dsh_scales[4] = {0,1,2,4};
+const uint8_t bmi160_scales[4] = {3,5,8,12};
 BBI2C * BBIMU::getBB(void)
 {
    return &_bbi2c;
@@ -416,7 +418,7 @@ int iRate;
             iRate = matchRate(_iAccRate, (int16_t *)&qmi8658_accel_rates[0]);
             iRate = (8-iRate) & 0xf; // reverse order
             ucTemp[0] = 3; // CTRL2 (accel control)
-            ucTemp[1] = iRate | 0x00; // enable accel +/-2g full scale
+            ucTemp[1] = iRate | (_iAccScale << 4); // enable accel +/-2/4/8/16g full scale
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2); 
          }
          if (_iMode & MODE_GYRO) {
@@ -519,6 +521,9 @@ int iRate;
          ucTemp[0] = 0x6b; // power management 1 register
          ucTemp[1] = 0x00; // disable sleep mode
          I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         ucTemp[0] = 0x1c; // ACCEL_CONFIG
+         ucTemp[1] = (_iAccScale << 3); // +/- 2/4/8/16g range
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          break; // MPU6050
       case IMU_TYPE_ADXL345:
          ucTemp[0] = 0x2c; // bandwidth/rate mode
@@ -591,6 +596,9 @@ int iRate;
          ucTemp[0] = 0x7e; // command
          ucTemp[1] = 0x15; // set gyroscope to normal power mode
          I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+         ucTemp[0] = 0x41; // ACC_RANGE
+         ucTemp[1] = bmi160_scales[_iAccScale];
+         I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          if (_iMode & MODE_STEP) {
              ucTemp[0] = 0x7a; // STEP_CONF
              ucTemp[1] = 0x15;
@@ -609,6 +617,9 @@ int iRate;
             // Enable only the requested channels
             ucTemp[1] |= (1 | 2 | 4); // activate all channels
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
+            ucTemp[0] = 0x24; // CTRL_REG5
+            ucTemp[1] = (lis3dsh_scales[_iAccScale] << 3);
+            I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          } // accelerometer enabled
          ucTemp[0] = 0x23; // CTRL_REG4
          ucTemp[1] = 0x88; // BDU & high res mode enabled
@@ -617,7 +628,7 @@ int iRate;
       case IMU_TYPE_LSM9DS1:
          if (_iMode & MODE_ACCEL) {
             ucTemp[0] = 0x20; // CTRL_REG6_XL (accelerometer control) 
-            ucTemp[1] = 0x80; // output rate 238Hz
+            ucTemp[1] = 0x80 | (lsm6ds3_scales[_iAccScale] << 3); // +/- 2/4/8/16g range, output rate 238Hz
             I2CWrite(&_bbi2c, _iAddr, ucTemp, 2);
          }
          break; // LSM9DS1
