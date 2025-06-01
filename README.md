@@ -1,6 +1,6 @@
-BitBank Inertial Measurement Unit (IMU) Library<br>
----------------------------------------
-Copyright (c) 2023 BitBank Software, Inc.<br>
+## BitBank Inertial Measurement Unit (IMU) Library
+
+Copyright (c) 2025 BitBank Software, Inc.<br>
 Written by Larry Bank<br>
 email: bitbank@pobox.com<br>
 <br>
