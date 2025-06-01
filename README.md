@@ -4,20 +4,21 @@ Copyright (c) 2025 BitBank Software, Inc.<br>
 Written by Larry Bank<br>
 email: bitbank@pobox.com<br>
 <br>
-There are a growing list of development boards which include LCDs with capacitive touch plates on them. These are overwhelmingly controlled by different versions of the ESP32 MCU. The boards normally only utilize GOODiX and FocalTech capacitive touch controllers and this library supports both the GT911 and FT6x36 in a generic way. Each has different capabilities and usually come pre-programmed for the specific pixel width and height of the target application. A feature supported by this library that may not be present in the device you're using is the touch area and pressure values. Some of their controllers also have built-in gesture detection. The common features of the controllers is that they will generate an interrupt signal when a touch event is occurring. This library allows you to request the latest touch information and it returns the number of active touch points (0-5) along with the coordinates (and pressure/area of each if available). The sensor type and address is auto-detected when calling the init() method. The only info that must be correctly supplied to the library are the GPIO pins used for the SDA/SCL/INT/RESET signals. Once initialized, repeatedly call getSamples() to test for and read any touch samples available.<br>
+This library aims to make it easier to work with IMUs (Inertial Measurement Units). There are a variety of vendors and products which all work in a very similar way. This library aims to simplify their use by providing a single API to work with the most popular products and auto-detect them. The end result is that you'll be able to write your project code and be able to freely change your component choices without having to change a single line of your code.<br>
 
-There are only 2 methods exposed by the class:<br>
-init() - detects if a supported CT controller is available and initializes it<br>
-getSamples() - returns touch points if available<br>
-Here is the TOUCHINFO structure filled by the getSamples() method:<br>
-```
-typedef struct _fttouchinfo
-{
-  int count;
-  uint16_t x[5], y[5];
-  uint8_t pressure[5], area[5];
-} TOUCHINFO;
-```
+<b>Getting Started</b><br>
+If your sensor is connected to the default I2C bus of your Arduino, this is the easiest scenario to use. Simply call init() with no parameters, then start() with the sensor mode you want to use:<br>
+rc = imu.init();
+if (rc == IMU_SUCCESS) {<br>
+   imu.start(MODE_ACCEL); // start the accelerometer<br>
+}<br>
+Now you can start to receive accelerometer samples:<br>
+while (1) {<br>
+    IMU_SAMPLE samp;<br>
+    imu.getSample(&samp);<br>
+    Serial.printf("X: %d, Y: %d, Z: %d\n", samp.accel[0], samp.accel[1], samp.accel[2]);<br>
+}<br>
+For more info about the full API, please consult the WiKi<br>
 
 If you find this code useful, please consider becoming a sponsor or sending a donation.
 
