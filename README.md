@@ -10,7 +10,7 @@ This library aims to make it easier to work with IMUs (Inertial Measurement Unit
 If your sensor is connected to the default I2C bus of your Arduino, this is the easiest scenario to use. Simply call init() with no parameters, then start() with the sensor mode you want to use:<br>
 rc = imu.init();
 if (rc == IMU_SUCCESS) {<br>
-   imu.start(MODE_ACCEL); // start the accelerometer<br>
+   imu.start(100, MODE_ACCEL); // start the accelerometer at 100 samp/sec<br>
 }<br>
 Now you can start to receive accelerometer samples:<br>
 while (1) {<br>
